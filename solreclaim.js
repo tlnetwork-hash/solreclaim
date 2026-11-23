@@ -581,13 +581,35 @@
     throw new Error('Wallet returned a transaction that could not be checked');
   }
 
+  // Read a JSON reply; if the edge (Cloudflare) answered with an HTML page instead
+  // (e.g. rate limit 429), turn it into a plain message instead of a parse error.
+  async function readJson(res) {
+    const text = await res.text();
+    try { return JSON.parse(text); } catch (e) {
+      if (res.status === 429) throw new Error('Too many requests right now. Wait a few seconds and try again.');
+      if (res.status >= 500) throw new Error('The server is busy (error ' + res.status + '). Wait a moment and try again.');
+      throw new Error('Unexpected reply from the server (error ' + res.status + '). Try again in a moment.');
+    }
+  }
+
+  // Safe-to-repeat POST (reads only): retries a couple of times on 429/502/503/504 with a short wait.
+  async function fetchRetry(url, opts) {
+    let res;
+    for (let i = 0; i < 3; i++) {
+      res = await fetch(url, opts);
+      if (res.status !== 429 && res.status !== 502 && res.status !== 503 && res.status !== 504) return res;
+      await new Promise(function (r) { setTimeout(r, 1200 * (i + 1)); });
+    }
+    return res;
+  }
+
   async function rpc(method, params) {
-    const res = await fetch(base() + '/api/rpc', {
+    const res = await fetchRetry(base() + '/api/rpc', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: method, params: params }),
     });
-    const body = await res.json();
+    const body = await readJson(res);
     if (body.error) throw new Error(body.error.message || 'RPC error');
     return body.result;
   }
@@ -600,12 +622,12 @@
   }
 
   async function scanWallet(address) {
-    const res = await fetch(base() + '/api/solreclaim/scan', {
+    const res = await fetchRetry(base() + '/api/solreclaim/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address: address }),
     });
-    const body = await res.json();
+    const body = await readJson(res);
     if (!res.ok) throw new Error(body.error || 'Scan failed');
     return body;
   }
@@ -1264,7 +1286,10 @@
       throw e;
     }
     if (timer) clearTimeout(timer);
-    const body = await res.json().catch(() => ({}));
+    let body;
+    try { body = await readJson(res); } catch (e) {
+      throw new Error(String(e && e.message ? e.message : e) + ' The transaction may or may not have landed. Check your wallet activity or Solscan before trying again.');
+    }
     if (!res.ok) throw new Error(body.error || 'Send failed');
     if (!body.signature) throw new Error('Send did not return a signature');
     return body;
