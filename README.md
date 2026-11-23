@@ -27,11 +27,7 @@ It builds Solana transactions in your browser and asks **your wallet** (Phantom,
 
 ## Check that the live site runs this file
 
-```
-curl -s https://degencalc.com/static/js/solreclaim.js | sha256sum
-```
-
-Compare the result with `SHA256SUM.txt` in this repo. A match means the site serves exactly this code.
+Open `https://degencalc.com/static/js/solreclaim.js` in your browser, save the file, then run `sha256sum solreclaim.js` (Mac: `shasum -a 256 solreclaim.js`; Windows: `certutil -hashfile solreclaim.js SHA256`). Compare the result with `SHA256SUM.txt` in this repo. A match means the site serves exactly this code. (Command-line `curl` may be blocked by the site's bot protection.)
 
 ## Limits
 
